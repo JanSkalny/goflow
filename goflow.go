@@ -45,7 +45,10 @@ var (
 	LogLevel = flag.String("loglevel", "info", "Log level")
 	LogFmt   = flag.String("logfmt", "normal", "Log formatter")
 
-	EnableKafka  = flag.Bool("kafka", true, "Enable Kafka")
+	EnableSyslog  = flag.Bool("syslog", false, "Enable Syslog")
+	SyslogAddr  = flag.String("syslog.addr", "127.0.0.1", "Remote syslog address")
+
+	EnableKafka  = flag.Bool("kafka", false, "Enable Kafka")
 	MetricsAddr  = flag.String("metrics.addr", ":8080", "Metrics address")
 	MetricsPath  = flag.String("metrics.path", "/metrics", "Metrics path")
 	TemplatePath = flag.String("templates.path", "/templates", "NetFlow/IPFIX templates list")
@@ -401,6 +404,9 @@ func FlowMessageToString(fmsg *flowmessage.FlowMessage) string {
 
 func (s *state) produceFlow(fmsgset []*flowmessage.FlowMessage) {
 	for _, fmsg := range fmsgset {
+		if s.syslogEn {
+			s.syslogState.SendSyslogFlowMessage(fmsg)
+		}
 		if s.kafkaEn {
 			s.kafkaState.SendKafkaFlowMessage(fmsg)
 		}
@@ -629,6 +635,9 @@ type state struct {
 	kafkaState *transport.KafkaState
 	kafkaEn    bool
 
+	syslogState *transport.SyslogState
+	syslogEn    bool
+
 	templateslock *sync.RWMutex
 	templates     map[string]*TemplateSystem
 
@@ -771,6 +780,13 @@ func main() {
 		kafkaState := transport.StartKafkaProducer(addrs, *KafkaTopic, *KafkaTLS, *KafkaSASL)
 		s.kafkaState = kafkaState
 		s.kafkaEn = true
+	}
+
+	if *EnableSyslog {
+		addrs := strings.Split(*SyslogAddr, ",")
+		syslogState := transport.StartSyslogProducer(addrs)
+		s.syslogState = syslogState
+		s.syslogEn = true
 	}
 
 	if *FEnable {
